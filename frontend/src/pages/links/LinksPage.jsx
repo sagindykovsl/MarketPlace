@@ -19,11 +19,31 @@ export default function LinksPage() {
   const [requestOpen, setRequestOpen] = useState(false);
   const [supplierId, setSupplierId] = useState("");
   const [requestLoading, setRequestLoading] = useState(false);
+  const [suppliers, setSuppliers] = useState([]);
+  const [loadingSuppliers, setLoadingSuppliers] = useState(false);
 
   useEffect(() => {
     loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (requestOpen && isConsumer) {
+      loadSuppliers();
+    }
+  }, [requestOpen, isConsumer]);
+
+  async function loadSuppliers() {
+    setLoadingSuppliers(true);
+    try {
+      const res = await api.get("/api/suppliers");
+      setSuppliers(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error("Failed to load suppliers:", err);
+    } finally {
+      setLoadingSuppliers(false);
+    }
+  }
 
   async function loadAll() {
     setLoading(true);
@@ -300,21 +320,30 @@ export default function LinksPage() {
           <div className="bg-surface rounded-2xl p-8 shadow-2xl w-full max-w-md space-y-6 border border-white/50">
             <h2 className="text-xl font-heading font-bold text-primary-900">Request link to supplier</h2>
             <p className="text-sm text-gray-500">
-              Enter the <span className="font-mono bg-gray-100 px-1 py-0.5 rounded text-gray-700">supplier_id</span> you got from the supplier.
+              Select a supplier from the list below to request a connection.
               Once approved, you&apos;ll be able to place orders and chat.
             </p>
 
             <form onSubmit={handleRequestLink} className="space-y-4">
               <div>
-                <label className="text-sm font-medium text-gray-700">Supplier ID</label>
-                <input
-                  type="number"
-                  className="w-full border-gray-200 rounded-xl px-4 py-2 mt-1 text-sm focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all bg-gray-50/50"
-                  value={supplierId}
-                  onChange={(e) => setSupplierId(e.target.value)}
-                  placeholder="e.g. 1"
-                  required
-                />
+                <label className="text-sm font-medium text-gray-700">Supplier</label>
+                {loadingSuppliers ? (
+                  <div className="text-sm text-gray-500 animate-pulse mt-1">Loading suppliers...</div>
+                ) : (
+                  <select
+                    className="w-full border-gray-200 rounded-xl px-4 py-2 mt-1 text-sm focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all bg-gray-50/50"
+                    value={supplierId}
+                    onChange={(e) => setSupplierId(e.target.value)}
+                    required
+                  >
+                    <option value="">Select a supplier</option>
+                    {suppliers.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.company_name}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
@@ -332,7 +361,7 @@ export default function LinksPage() {
                 <button
                   type="submit"
                   className="px-4 py-2 text-sm font-medium rounded-lg bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50 shadow-lg shadow-primary-600/20 transition-all"
-                  disabled={requestLoading}
+                  disabled={requestLoading || !supplierId}
                 >
                   {requestLoading ? "Sending..." : "Send Request"}
                 </button>
