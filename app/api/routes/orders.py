@@ -123,7 +123,7 @@ def create_order(
     return order
 
 
-@router.get("", response_model=List[OrderResponse])
+@router.get("", response_model=List[OrderWithDetailsResponse])
 def get_orders(
     status_filter: Optional[OrderStatus] = Query(None, alias="status"),
     current_user: User = Depends(get_current_user),
@@ -146,7 +146,34 @@ def get_orders(
         query = query.filter(Order.status == status_filter)
     
     orders = query.all()
-    return orders
+    
+    # Enrich with has_complaint flag manually if needed, or rely on model property if it exists
+    # The schema expects has_complaint. The model relationship is 'complaints'.
+    # We can map it in the response.
+    
+    results = []
+    for o in orders:
+        has_complaint = len(o.complaints) > 0
+        # We need to construct the response object because has_complaint is not on the SQLAlchemy model directly as a boolean
+        # But Pydantic's from_attributes might fail if the attribute doesn't exist.
+        # Let's check OrderWithDetailsResponse definition.
+        
+        results.append(OrderWithDetailsResponse(
+            id=o.id,
+            supplier_id=o.supplier_id,
+            consumer_id=o.consumer_id,
+            status=o.status,
+            created_by_user_id=o.created_by_user_id,
+            created_at=o.created_at,
+            updated_at=o.updated_at,
+            items=o.items,
+            supplier=o.supplier,
+            consumer=o.consumer,
+            has_complaint=has_complaint,
+            total_amount=o.total_amount
+        ))
+        
+    return results
 
 
 @router.get("/{order_id}", response_model=OrderWithDetailsResponse)
@@ -189,7 +216,8 @@ def get_order(
         items=order.items,
         supplier=order.supplier,
         consumer=order.consumer,
-        has_complaint=has_complaint
+        has_complaint=has_complaint,
+        total_amount=order.total_amount
     )
     
     return response
@@ -231,6 +259,20 @@ def update_order_status(
     
     old_status = order.status
     order.status = data.status
+    
+    # Adjust stock if order is accepted
+    if data.status == OrderStatus.ACCEPTED and old_status != OrderStatus.ACCEPTED:
+        for item in order.items:
+            product = item.product
+            if product.stock_quantity < item.quantity:
+                 raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Insufficient stock for product {product.name}. Available: {product.stock_quantity}, Requested: {item.quantity}"
+                )
+            product.stock_quantity -= item.quantity
+            if product.stock_quantity == 0:
+                db.delete(product)
+    
     db.commit()
     db.refresh(order)
     

@@ -8,7 +8,7 @@ from app.core.dependencies import (
     get_current_supplier_owner_or_manager
 )
 from app.models.models import (
-    User, Supplier, Link, LinkStatus, UserRole, AuditLog
+    User, Supplier, Link, LinkStatus, UserRole, AuditLog, Message
 )
 from app.schemas.schemas import (
     SupplierResponse, LinkCreate, LinkResponse, 
@@ -134,10 +134,10 @@ def approve_link(
             detail="You can only approve links for your supplier"
         )
     
-    if link.status != LinkStatus.PENDING:
+    if link.status not in [LinkStatus.PENDING, LinkStatus.DECLINED]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Link is not pending (current status: {link.status.value})"
+            detail=f"Link status must be PENDING or DECLINED to approve (current: {link.status.value})"
         )
     
     link.status = LinkStatus.APPROVED
@@ -232,4 +232,58 @@ def block_link(
     db.commit()
     
     return link
+
+
+@router.delete("/links/{link_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_link(
+    link_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a link (Unlink)."""
+    link = db.query(Link).filter(Link.id == link_id).first()
+    if not link:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Link not found"
+        )
+    
+    # Check permissions
+    if current_user.role == UserRole.CONSUMER:
+        if link.consumer_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only delete your own links"
+            )
+    else:
+        # Supplier staff
+        if not current_user.supplier_id or link.supplier_id != current_user.supplier_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only delete links for your supplier"
+            )
+        # Only Owner/Manager can delete links? Or Sales too?
+        # Let's allow Owner/Manager for now as per other management actions
+        if current_user.role not in [UserRole.OWNER, UserRole.MANAGER]:
+             raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only Owner or Manager can unlink consumers"
+            )
+
+    # Delete associated messages first
+    db.query(Message).filter(Message.link_id == link.id).delete()
+
+    db.delete(link)
+    db.commit()
+    
+    audit = AuditLog(
+        user_id=current_user.id,
+        action="LINK_DELETED",
+        entity_type="LINK",
+        entity_id=link.id
+    )
+    db.add(audit)
+    db.commit()
+    
+    return None
 

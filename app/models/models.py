@@ -114,7 +114,7 @@ class Product(Base):
     
     # Relationships
     supplier = relationship("Supplier", back_populates="products")
-    order_items = relationship("OrderItem", back_populates="product")
+    order_items = relationship("OrderItem", back_populates="product", cascade="all, delete")
 
 
 class Order(Base):
@@ -134,6 +134,10 @@ class Order(Base):
     created_by_user = relationship("User", back_populates="created_orders", foreign_keys=[created_by_user_id])
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
     complaints = relationship("Complaint", back_populates="order")
+
+    @property
+    def total_amount(self):
+        return sum((item.subtotal for item in self.items), 0)
 
 
 class OrderItem(Base):

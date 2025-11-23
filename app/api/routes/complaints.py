@@ -110,26 +110,41 @@ def update_complaint(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Update complaint status (supplier staff only)."""
-    if current_user.role == UserRole.CONSUMER:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only supplier staff can update complaints"
-        )
-    
+    """Update complaint status."""
     complaint = db.query(Complaint).filter(Complaint.id == complaint_id).first()
     if not complaint:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Complaint not found"
         )
-    
-    order = db.query(Order).filter(Order.id == complaint.order_id).first()
-    if not order or order.supplier_id != current_user.supplier_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only update complaints for your supplier's orders"
-        )
+
+    if current_user.role == UserRole.CONSUMER:
+        if complaint.raised_by_user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only update your own complaints"
+            )
+        
+        if data.status and data.status != ComplaintStatus.RESOLVED:
+             raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Consumers can only mark complaints as resolved"
+            )
+             
+        if data.assigned_to_user_id is not None:
+             raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Consumers cannot assign complaints"
+            )
+            
+    else:
+        # Supplier staff logic
+        order = db.query(Order).filter(Order.id == complaint.order_id).first()
+        if not order or order.supplier_id != current_user.supplier_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only update complaints for your supplier's orders"
+            )
     
     if data.status:
         if current_user.role == UserRole.SALES:

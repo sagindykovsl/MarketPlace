@@ -1,10 +1,12 @@
 // frontend/src/pages/orders/OrdersPage.jsx
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "../../api/client.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 
 export default function OrdersPage() {
     const { user } = useAuth();
+    const navigate = useNavigate();
     const [orders, setOrders] = useState([]);
     const [loading, setLoading] = useState(true);
 
@@ -13,6 +15,8 @@ export default function OrdersPage() {
     const [productId, setProductId] = useState("");
     const [quantity, setQuantity] = useState(1);
     const [creating, setCreating] = useState(false);
+    const [availableProducts, setAvailableProducts] = useState([]);
+    const [allSuppliers, setAllSuppliers] = useState([]);
 
     const isConsumer = user && user.role === "CONSUMER";
 
@@ -31,9 +35,50 @@ export default function OrdersPage() {
         }
     }
 
+    async function loadSuppliers() {
+        try {
+            // Only load suppliers we have an APPROVED link with
+            const res = await api.get("/api/links/me");
+            const links = Array.isArray(res.data) ? res.data : [];
+            const approved = links
+                .filter((l) => l.status === "APPROVED")
+                .map((l) => l.supplier)
+                .filter(Boolean); // filter out nulls if any
+
+            setAllSuppliers(approved);
+        } catch (err) {
+            console.error("Failed to load suppliers:", err);
+        }
+    }
+
     useEffect(() => {
         loadOrders();
-    }, []);
+        if (isConsumer) {
+            loadSuppliers();
+        }
+    }, [isConsumer]);
+
+    // ---------- LOAD PRODUCTS FOR SUPPLIER ----------
+    async function loadProductsForSupplier(sId) {
+        if (!sId) {
+            setAvailableProducts([]);
+            return;
+        }
+        try {
+            const res = await api.get(`/api/suppliers/${sId}/products`);
+            setAvailableProducts(Array.isArray(res.data) ? res.data : []);
+        } catch (err) {
+            console.error("Failed to load products:", err);
+            setAvailableProducts([]);
+        }
+    }
+
+    const handleSupplierChange = (e) => {
+        const val = e.target.value;
+        setSupplierId(val);
+        setProductId(""); // reset product
+        loadProductsForSupplier(val);
+    };
 
     // ---------- CREATE ORDER (POST /api/orders) ----------
     async function createOrder(e) {
@@ -77,7 +122,8 @@ export default function OrdersPage() {
             await loadOrders();
         } catch (err) {
             console.error("Create order failed:", err.response?.data || err);
-            alert("Failed to create order. Check console for details.");
+            const msg = err.response?.data?.detail || "Failed to create order. Check console for details.";
+            alert(msg);
         } finally {
             setCreating(false);
         }
@@ -100,24 +146,41 @@ export default function OrdersPage() {
 
                     <form className="grid grid-cols-1 md:grid-cols-3 gap-4" onSubmit={createOrder}>
                         <div className="space-y-1">
-                            <label className="text-sm font-medium text-gray-700">Supplier ID</label>
-                            <input
-                                type="number"
+                            <label className="text-sm font-medium text-gray-700">Supplier</label>
+                            <select
                                 className="w-full border-gray-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all bg-gray-50/50"
                                 value={supplierId}
-                                onChange={(e) => setSupplierId(e.target.value)}
-                                placeholder="e.g. 1"
-                            />
+                                onChange={handleSupplierChange}
+                            >
+                                <option value="">Select supplier...</option>
+                                {allSuppliers.map((s) => (
+                                    <option key={s.id} value={s.id}>
+                                        {s.company_name} (ID: {s.id})
+                                    </option>
+                                ))}
+                            </select>
                         </div>
                         <div className="space-y-1">
-                            <label className="text-sm font-medium text-gray-700">Product ID</label>
-                            <input
-                                type="number"
+                            <label className="text-sm font-medium text-gray-700">Product</label>
+                            <select
                                 className="w-full border-gray-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all bg-gray-50/50"
                                 value={productId}
                                 onChange={(e) => setProductId(e.target.value)}
-                                placeholder="e.g. 3"
-                            />
+                                disabled={!supplierId}
+                            >
+                                <option value="">
+                                    {!supplierId
+                                        ? "Select supplier first..."
+                                        : availableProducts.length === 0
+                                            ? "No products found"
+                                            : "Select product..."}
+                                </option>
+                                {availableProducts.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                        {p.name} ({p.price} ₸) - Min: {p.min_order_quantity}, Stock: {p.stock_quantity}
+                                    </option>
+                                ))}
+                            </select>
                         </div>
                         <div className="space-y-1">
                             <label className="text-sm font-medium text-gray-700">Quantity</label>
@@ -157,28 +220,55 @@ export default function OrdersPage() {
                         <thead className="bg-gray-50/50 border-b border-gray-100">
                             <tr>
                                 <th className="px-6 py-4 text-left font-semibold text-gray-600">ID</th>
-                                <th className="px-6 py-4 text-left font-semibold text-gray-600">Supplier</th>
+                                <th className="px-6 py-4 text-left font-semibold text-gray-600">
+                                    {isConsumer ? "Supplier" : "Consumer"}
+                                </th>
                                 <th className="px-6 py-4 text-left font-semibold text-gray-600">Status</th>
+                                <th className="px-6 py-4 text-left font-semibold text-gray-600">Total</th>
                                 <th className="px-6 py-4 text-left font-semibold text-gray-600">Created at</th>
+                                <th className="px-6 py-4 text-left font-semibold text-gray-600">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
-                            {orders.map((o) => (
-                                <tr key={o.id} className="hover:bg-gray-50/50 transition-colors">
-                                    <td className="px-6 py-4 font-medium text-gray-900">{o.id}</td>
-                                    <td className="px-6 py-4 text-gray-700">{o.supplier_id}</td>
-                                    <td className="px-6 py-4">
-                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                            {o.status}
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-4 text-gray-500">
-                                        {o.created_at
-                                            ? new Date(o.created_at).toLocaleString()
-                                            : "-"}
-                                    </td>
-                                </tr>
-                            ))}
+                            {orders.map((o) => {
+                                const total = o.items?.reduce((acc, item) => acc + (Number(item.subtotal) || 0), 0) || 0;
+                                return (
+                                    <tr key={o.id} className="hover:bg-gray-50/50 transition-colors">
+                                        <td className="px-6 py-4 font-medium text-gray-900">{o.id}</td>
+                                        <td className="px-6 py-4 text-gray-700">
+                                            {isConsumer
+                                                ? o.supplier?.company_name || `Supplier #${o.supplier_id}`
+                                                : o.consumer?.restaurant_name || o.consumer?.full_name || `Consumer #${o.consumer_id}`}
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${o.status === "ACCEPTED" || o.status === "COMPLETED"
+                                                ? "bg-green-100 text-green-800"
+                                                : o.status === "REJECTED"
+                                                    ? "bg-red-100 text-red-800"
+                                                    : "bg-yellow-100 text-yellow-800"
+                                                }`}>
+                                                {o.status}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4 text-gray-700 font-medium">
+                                            {total.toFixed(2)} ₸
+                                        </td>
+                                        <td className="px-6 py-4 text-gray-500">
+                                            {o.created_at
+                                                ? new Date(o.created_at).toLocaleString()
+                                                : "-"}
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <button
+                                                onClick={() => navigate(`/orders/${o.id}`)}
+                                                className="px-3 py-1.5 rounded-lg bg-primary-50 text-primary-700 text-xs font-medium hover:bg-primary-100 border border-primary-200 transition-colors"
+                                            >
+                                                View
+                                            </button>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>

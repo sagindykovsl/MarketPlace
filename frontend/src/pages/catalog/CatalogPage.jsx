@@ -15,10 +15,40 @@ export default function CatalogPage() {
     async function loadProducts() {
         setLoading(true);
         try {
-            const res = await api.get("/api/supplier/products");
-            const raw = Array.isArray(res.data) ? res.data : [];
-            const activeOnly = raw;
-            setProducts(activeOnly);
+            if (canEdit) {
+                // Supplier: load own products
+                const res = await api.get("/api/supplier/products");
+                setProducts(Array.isArray(res.data) ? res.data : []);
+            } else {
+                // Consumer: load products from all linked suppliers
+                // 1. Get my links
+                const linksRes = await api.get("/api/links/me");
+                const links = Array.isArray(linksRes.data) ? linksRes.data : [];
+                
+                // 2. Filter approved links
+                const approvedLinks = links.filter(l => l.status === "APPROVED");
+                
+                // 3. Fetch products for each supplier
+                const productPromises = approvedLinks.map(async (link) => {
+                    try {
+                        const pRes = await api.get(`/api/suppliers/${link.supplier_id}/products`);
+                        const products = Array.isArray(pRes.data) ? pRes.data : [];
+                        // Attach supplier info to each product for display
+                        return products.map(p => ({
+                            ...p,
+                            supplier: link.supplier // link.supplier comes from LinkWithSupplierResponse
+                        }));
+                    } catch (err) {
+                        console.warn(`Failed to load products for supplier ${link.supplier_id}`, err);
+                        return [];
+                    }
+                });
+                
+                const results = await Promise.all(productPromises);
+                // Flatten array
+                const allProducts = results.flat();
+                setProducts(allProducts);
+            }
         } catch (err) {
             console.error("Failed to load products", err);
         } finally {
@@ -96,6 +126,7 @@ export default function CatalogPage() {
                         <thead className="bg-gray-50/50 border-b border-gray-100">
                             <tr>
                                 <th className="px-6 py-4 text-left font-semibold text-gray-600">Name</th>
+                                {!canEdit && <th className="px-6 py-4 text-left font-semibold text-gray-600">Supplier</th>}
                                 <th className="px-6 py-4 text-left font-semibold text-gray-600">Description</th>
                                 <th className="px-6 py-4 text-left font-semibold text-gray-600">Price</th>
                                 <th className="px-6 py-4 font-semibold text-gray-600">Status</th>
@@ -109,6 +140,11 @@ export default function CatalogPage() {
                             {products.map((p) => (
                                 <tr key={p.id} className="hover:bg-gray-50/50 transition-colors">
                                     <td className="px-6 py-4 font-medium text-gray-900">{p.name}</td>
+                                    {!canEdit && (
+                                        <td className="px-6 py-4 text-gray-700">
+                                            {p.supplier?.company_name || `Supplier #${p.supplier_id}`}
+                                        </td>
+                                    )}
                                     <td className="px-6 py-4 text-gray-500 max-w-xs truncate">{p.description}</td>
                                     <td className="px-6 py-4 font-medium text-primary-700">{p.price} ₸</td>
                                     <td className="px-6 py-4 text-center">
