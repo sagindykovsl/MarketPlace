@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "../../api/client.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 
 export default function LinksPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   const isConsumer = user?.role === "CONSUMER";
   const isSupplierStaff = user && ["OWNER", "MANAGER", "SALES"].includes(user.role);
@@ -95,6 +97,17 @@ export default function LinksPage() {
     }
   }
 
+  async function handleUnlink(linkId) {
+    if (!window.confirm("Are you sure you want to unlink? This will remove the connection.")) return;
+    try {
+      await api.delete(`/api/links/${linkId}`);
+      await loadAll();
+    } catch (err) {
+      console.error("Unlink failed:", err.response?.status, err.response?.data || err);
+      alert("Failed to unlink. Check console for details.");
+    }
+  }
+
   const formatDate = (ts) =>
     ts ? new Date(ts).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" }) : "";
 
@@ -146,6 +159,7 @@ export default function LinksPage() {
                       )}
                       <th className="px-6 py-4 text-left font-semibold text-gray-600">Status</th>
                       <th className="px-6 py-4 text-left font-semibold text-gray-600">Created at</th>
+                      <th className="px-6 py-4 text-left font-semibold text-gray-600">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
@@ -172,6 +186,40 @@ export default function LinksPage() {
                           </span>
                         </td>
                         <td className="px-6 py-4 text-gray-500">{formatDate(l.created_at)}</td>
+                        <td className="px-6 py-4 space-x-2">
+                          {l.status === "APPROVED" && (
+                            <>
+                              <button
+                                onClick={() => navigate(`/chat?linkId=${l.id}`)}
+                                className="px-3 py-1.5 rounded-lg bg-primary-50 text-primary-700 text-xs font-medium hover:bg-primary-100 border border-primary-200 transition-colors"
+                              >
+                                Open chat
+                              </button>
+                              <button
+                                onClick={() => handleUnlink(l.id)}
+                                className="px-3 py-1.5 rounded-lg bg-red-50 text-red-700 text-xs font-medium hover:bg-red-100 border border-red-200 transition-colors"
+                              >
+                                Unlink
+                              </button>
+                            </>
+                          )}
+                          {l.status === "DECLINED" && isOwnerManager && (
+                            <>
+                              <button
+                                onClick={() => handleDecision(l.id, true)}
+                                className="px-3 py-1.5 rounded-lg bg-green-50 text-green-700 text-xs font-medium hover:bg-green-100 border border-green-200 transition-colors"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                onClick={() => handleUnlink(l.id)}
+                                className="px-3 py-1.5 rounded-lg bg-red-50 text-red-700 text-xs font-medium hover:bg-red-100 border border-red-200 transition-colors"
+                              >
+                                Unlink
+                              </button>
+                            </>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

@@ -54,10 +54,13 @@ export default function ComplaintsPage() {
     const markResolved = async (complaint) => {
         if (!user?.id) return;
         try {
-            await api.put(`/api/complaints/${complaint.id}`, {
-                status: "RESOLVED",
-                assigned_to_user_id: complaint.assigned_to_user_id || user.id,
-            });
+            const payload = { status: "RESOLVED" };
+            // Only include assigned_to_user_id if not a consumer
+            if (!isConsumer) {
+                payload.assigned_to_user_id = complaint.assigned_to_user_id || user.id;
+            }
+
+            await api.put(`/api/complaints/${complaint.id}`, payload);
             triggerReload();
         } catch (err) {
             console.error("Resolve failed:", err.response?.status, err.response?.data || err);
@@ -113,9 +116,7 @@ export default function ComplaintsPage() {
                                 <th className="px-6 py-4 text-left font-semibold text-gray-600">Description</th>
                                 <th className="px-6 py-4 text-left font-semibold text-gray-600">Created</th>
                                 <th className="px-6 py-4 text-left font-semibold text-gray-600">Resolved</th>
-                                {isSupplierStaff && (
-                                    <th className="px-6 py-4 text-left font-semibold text-gray-600">Actions</th>
-                                )}
+                                <th className="px-6 py-4 text-left font-semibold text-gray-600">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
@@ -158,26 +159,24 @@ export default function ComplaintsPage() {
                                         <td className="px-6 py-4 text-gray-500">{created}</td>
                                         <td className="px-6 py-4 text-gray-500">{resolved}</td>
 
-                                        {isSupplierStaff && (
-                                            <td className="px-6 py-4 space-x-2 whitespace-nowrap">
-                                                {!c.assigned_to_user_id && c.status !== "RESOLVED" && (
-                                                    <button
-                                                        onClick={() => assignToMe(c)}
-                                                        className="px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 text-xs font-medium hover:bg-indigo-100 border border-indigo-200 transition-colors"
-                                                    >
-                                                        Assign to me
-                                                    </button>
-                                                )}
-                                                {c.status !== "RESOLVED" && (
-                                                    <button
-                                                        onClick={() => markResolved(c)}
-                                                        className="px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-medium hover:bg-emerald-100 border border-emerald-200 transition-colors"
-                                                    >
-                                                        Mark resolved
-                                                    </button>
-                                                )}
-                                            </td>
-                                        )}
+                                        <td className="px-6 py-4 space-x-2 whitespace-nowrap">
+                                            {isSupplierStaff && !c.assigned_to_user_id && c.status !== "RESOLVED" && (
+                                                <button
+                                                    onClick={() => assignToMe(c)}
+                                                    className="px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 text-xs font-medium hover:bg-indigo-100 border border-indigo-200 transition-colors"
+                                                >
+                                                    Assign to me
+                                                </button>
+                                            )}
+                                            {c.status !== "RESOLVED" && (
+                                                <button
+                                                    onClick={() => markResolved(c)}
+                                                    className="px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-medium hover:bg-emerald-100 border border-emerald-200 transition-colors"
+                                                >
+                                                    Mark resolved
+                                                </button>
+                                            )}
+                                        </td>
                                     </tr>
                                 );
                             })}
@@ -204,6 +203,29 @@ function CreateComplaintModal({ onClose, onCreated }) {
     const [orderId, setOrderId] = useState("");
     const [description, setDescription] = useState("");
     const [saving, setSaving] = useState(false);
+    const [orders, setOrders] = useState([]);
+    const [loadingOrders, setLoadingOrders] = useState(true);
+
+    useEffect(() => {
+        const fetchOrders = async () => {
+            try {
+                const res = await api.get("/api/orders");
+                if (Array.isArray(res.data)) {
+                    // Filter out orders that already have complaints? 
+                    // For now, let's show all, or maybe only those without complaints if the backend restricts it.
+                    // Assuming we want to let them choose from any order.
+                    // Sorting by date descending is usually better.
+                    const sorted = res.data.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                    setOrders(sorted);
+                }
+            } catch (err) {
+                console.error("Failed to load orders", err);
+            } finally {
+                setLoadingOrders(false);
+            }
+        };
+        fetchOrders();
+    }, []);
 
     const canSave = orderId && description.trim().length > 0;
 
@@ -234,14 +256,23 @@ function CreateComplaintModal({ onClose, onCreated }) {
 
                 <div className="space-y-4">
                     <div className="space-y-1">
-                        <label className="text-sm font-medium text-gray-700">Order ID</label>
-                        <input
-                            type="number"
-                            className="w-full border-gray-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all bg-gray-50/50"
-                            value={orderId}
-                            onChange={(e) => setOrderId(e.target.value)}
-                            placeholder="Enter order ID"
-                        />
+                        <label className="text-sm font-medium text-gray-700">Order</label>
+                        {loadingOrders ? (
+                            <div className="text-sm text-gray-500 animate-pulse">Loading orders...</div>
+                        ) : (
+                            <select
+                                className="w-full border-gray-200 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all bg-gray-50/50"
+                                value={orderId}
+                                onChange={(e) => setOrderId(e.target.value)}
+                            >
+                                <option value="">Select an order</option>
+                                {orders.map((order) => (
+                                    <option key={order.id} value={order.id}>
+                                        #{order.id} • {new Date(order.created_at).toLocaleDateString()} • {order.supplier?.company_name || "Unknown Supplier"} • {Number(order.total_amount).toLocaleString()} ₸
+                                    </option>
+                                ))}
+                            </select>
+                        )}
                     </div>
 
                     <div className="space-y-1">

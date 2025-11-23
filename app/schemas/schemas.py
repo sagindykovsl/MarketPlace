@@ -185,6 +185,7 @@ class OrderResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     items: List[OrderItemResponse] = []
+    total_amount: Decimal
     
     model_config = ConfigDict(from_attributes=True)
 

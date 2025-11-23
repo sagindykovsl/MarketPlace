@@ -4,7 +4,7 @@ import api from "../api/client.js";
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [token, setToken] = useState(() => localStorage.getItem("token"));
+  const [token, setToken] = useState(() => localStorage.getItem("scp_token"));
   const [user, setUser] = useState(null); // { id, email, role, ... }
   const [loading, setLoading] = useState(true);
 
@@ -22,7 +22,7 @@ export function AuthProvider({ children }) {
         setUser(res.data);
       } catch (e) {
         console.error("Failed to load /me, clearing token", e);
-        localStorage.removeItem("token");
+        localStorage.removeItem("scp_token");
         setToken(null);
         setUser(null);
       } finally {
@@ -34,7 +34,7 @@ export function AuthProvider({ children }) {
   }, [token]);
 
   const handleAuthSuccess = (accessToken) => {
-    localStorage.setItem("token", accessToken);
+    localStorage.setItem("scp_token", accessToken);
     setToken(accessToken);
   };
 
@@ -77,7 +77,7 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
-    localStorage.removeItem("token");
+    localStorage.removeItem("scp_token");
     setToken(null);
     setUser(null);
   };

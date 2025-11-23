@@ -15,6 +15,7 @@ export default function ChatPage() {
 
     const [newMessage, setNewMessage] = useState("");
     const [sending, setSending] = useState(false);
+    const [attachment, setAttachment] = useState(null);
 
     // ---------- LOAD LINKS (THREAD LIST) ----------
     useEffect(() => {
@@ -94,17 +95,26 @@ export default function ChatPage() {
     // ---------- SEND MESSAGE ----------
     const handleSend = async (e) => {
         e.preventDefault();
-        if (!selectedLinkId || !newMessage.trim() || sending) return;
+        if (!selectedLinkId || (!newMessage.trim() && !attachment) || sending) return;
 
         setSending(true);
         try {
-            const payload = { content: newMessage.trim() }; // matches Swagger: { "content": "string" }
+            let contentToSend = newMessage.trim();
+            if (attachment) {
+                // MVP: Backend doesn't support real file upload yet, so we append a fake attachment marker
+                // In a real app, we'd upload the file first, get a URL, and send that.
+                const attachmentText = `\n[Attachment: ${attachment.name}]`;
+                contentToSend = contentToSend ? contentToSend + attachmentText : attachmentText.trim();
+            }
+
+            const payload = { content: contentToSend };
             const res = await api.post(`/api/messages/${selectedLinkId}`, payload);
 
             // backend returns the created message
             const created = res.data;
             setMessages((prev) => [...prev, created]);
             setNewMessage("");
+            setAttachment(null);
         } catch (err) {
             console.error("Failed to send message:", err.response?.status, err.response?.data || err);
             alert("Failed to send message. Check console for details.");
@@ -266,10 +276,35 @@ export default function ChatPage() {
 
                 {/* Composer */}
                 <div className="p-4 bg-surface border-t border-gray-100">
+                    {attachment && (
+                        <div className="mb-2 px-4 py-2 bg-gray-50 rounded-lg border border-gray-200 flex justify-between items-center text-sm">
+                            <span className="text-gray-700 truncate max-w-xs">📎 {attachment.name}</span>
+                            <button
+                                onClick={() => setAttachment(null)}
+                                className="text-red-500 hover:text-red-700 font-medium"
+                            >
+                                Remove
+                            </button>
+                        </div>
+                    )}
                     <form
                         onSubmit={handleSend}
                         className="flex items-center gap-3 max-w-4xl mx-auto"
                     >
+                        <label className="cursor-pointer p-2 text-gray-500 hover:text-primary-600 hover:bg-gray-50 rounded-lg transition-colors">
+                            <input
+                                type="file"
+                                className="hidden"
+                                onChange={(e) => {
+                                    if (e.target.files?.[0]) {
+                                        setAttachment(e.target.files[0]);
+                                    }
+                                }}
+                            />
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13" />
+                            </svg>
+                        </label>
                         <input
                             type="text"
                             className="flex-1 border-gray-200 rounded-xl px-5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all bg-gray-50/50 shadow-inner"
@@ -282,7 +317,7 @@ export default function ChatPage() {
                         />
                         <button
                             type="submit"
-                            disabled={!selectedLinkId || sending || !newMessage.trim()}
+                            disabled={!selectedLinkId || sending || (!newMessage.trim() && !attachment)}
                             className="px-6 py-3 rounded-xl bg-primary-600 text-white text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary-700 shadow-lg shadow-primary-600/20 hover:shadow-primary-600/30 transition-all active:scale-95"
                         >
                             {sending ? "Sending..." : "Send"}
