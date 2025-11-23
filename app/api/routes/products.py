@@ -124,7 +124,7 @@ def delete_product(
             detail="You can only delete products for your supplier"
         )
     
-    product.is_active = False
+    db.delete(product)
     db.commit()
     
     audit = AuditLog(
