@@ -397,23 +397,3 @@ All endpoints are documented at: **http://localhost:8000/docs**
 3. Test the complete workflow: register → link → products → orders
 4. Check your database: `psql -U postgres supplier_consumer_db`
 5. Explore the codebase in the `app/` directory
-
----
-
-## 🆘 Need Help?
-
-If you encounter issues:
-
-1. Check that PostgreSQL is running
-2. Verify virtual environment is activated (see `(.venv)` in terminal)
-3. Confirm `.env` file has correct database password
-4. Ensure migrations ran: `alembic current`
-
-For bugs or questions, open an issue with:
-- Your operating system
-- Full error message
-- Steps to reproduce
-
----
-
-**Happy Coding! 🎉**
